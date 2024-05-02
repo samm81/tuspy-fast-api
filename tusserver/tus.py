@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from typing import Callable, Optional
 from uuid import uuid4
 
-from fastapi import Header, HTTPException, Response, Request, status, Depends, Path, APIRouter
+from fastapi import Header, HTTPException, Response, Request, status, Depends, Path, APIRouter, BackgroundTasks
 from starlette.responses import FileResponse
 
 from tusserver.metadata import FileMetadata
@@ -18,7 +18,7 @@ def create_api_router(
         files_dir='/tmp/files',
         location='http://127.0.0.1:8000/files',
         max_size=128849018880,
-        on_upload_complete: Optional[Callable[[str, dict], None]] = None,
+        on_upload_complete: Optional[Callable[[str, dict, BackgroundTasks], None]] = None,
         auth: Optional[Callable[[], None]] = default_auth,
         days_to_keep: int = 5,
 ):
@@ -71,6 +71,7 @@ def create_api_router(
     def upload_chunk(
             response: Response,
             uuid: str,
+            background_tasks: BackgroundTasks,
             content_type: str = Header(None),
             content_length: int = Header(None),
             upload_offset: int = Header(None),
@@ -80,6 +81,7 @@ def create_api_router(
         response_headers = _get_and_save_the_file(
             response,
             uuid,
+            background_tasks,
             content_type,
             content_length,
             upload_offset,
@@ -101,6 +103,7 @@ def create_api_router(
     async def create_upload(
             request: Request,
             response: Response,
+            background_tasks: BackgroundTasks,
             upload_metadata: str = Header(None),
             upload_length: int = Header(None),
             upload_defer_length: int = Header(None),
@@ -140,6 +143,7 @@ def create_api_router(
             response = _get_and_save_the_file(
                 response,
                 uuid,
+                background_tasks
             )
             response.headers["Location"] = f"{location}/{uuid}"
             return response
@@ -245,6 +249,7 @@ def create_api_router(
     def _get_and_save_the_file(
             response: Response,
             uuid: str,
+            background_tasks: BackgroundTasks,
             content_type: str = Header(None),
             content_length: int = Header(None),
             upload_length: int = Header(None),
@@ -276,7 +281,9 @@ def create_api_router(
             response.headers["Upload-Expires"] = str(meta.expires)
             response.status_code = status.HTTP_204_NO_CONTENT
             if on_upload_complete:
-                on_upload_complete(os.path.join(files_dir, f'{uuid}'), meta.metadata)
+                on_upload_complete(
+                    os.path.join(files_dir, f"{uuid}"), meta.metadata, background_tasks
+                )
 
             return response
 
